@@ -2,18 +2,15 @@ import os
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
-# Environment variables
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
-# Tarjima tarixi uchun dictionary
+# Tarjima tarixi uchun
 user_history = {}
 
-translator = Translator()
-
-# Kerakli 15 ta asosiy tillar
+# Kerakli tillar
 LANGUAGES = {
     'English': 'en',
     'Russian': 'ru',
@@ -21,7 +18,7 @@ LANGUAGES = {
     'Korean': 'ko',
     'French': 'fr',
     'German': 'de',
-    'Chinese': 'zh-cn',
+    'Chinese': 'zh',
     'Japanese': 'ja',
     'Spanish': 'es',
     'Arabic': 'ar',
@@ -46,44 +43,22 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_text = update.message.text
 
-    # Tarjima tarixini tekshirish va yaratish
     if user_id not in user_history:
         user_history[user_id] = []
 
-    # Auto detect rejimi
-    if user_text not in LANGUAGES:
-        detected = translator.detect(user_text)
-        src_lang = detected.lang
-
-        dest_lang = 'en'  # default target: English
-        if src_lang == 'en':
-            dest_lang = 'uz'  # Ingliz bo‘lsa, o‘zbekka
-
-        translation = translator.translate(user_text, src=src_lang, dest=dest_lang)
-
-        # Tarixga yozish
-        user_history[user_id].append({'input': user_text, 'output': translation.text})
-
-        await update.message.reply_text(f"Auto detect:\n{src_lang} -> {dest_lang}\nNatija: {translation.text}")
-
-    # Foydalanuvchi til tanlagan bo‘lsa
-    elif user_text in LANGUAGES:
+    if user_text in LANGUAGES:
         context.user_data['target_lang'] = LANGUAGES[user_text]
-        await update.message.reply_text(f"Target language set to: {user_text}. Endi tarjima qilmoqchi bo‘lgan matningizni yuboring.")
+        await update.message.reply_text(f"Target language set to: {user_text}. Endi matn yuboring.")
+        return
 
-    # Foydalanuvchi matn yuborgan bo‘lsa
-    elif 'target_lang' in context.user_data:
-        target_lang = context.user_data['target_lang']
-        detected = translator.detect(user_text)
-        src_lang = detected.lang
-
-        translation = translator.translate(user_text, src=src_lang, dest=target_lang)
-        user_history[user_id].append({'input': user_text, 'output': translation.text})
-
-        await update.message.reply_text(f"Auto detect:\n{src_lang} -> {target_lang}\nNatija: {translation.text}")
-
-    else:
-        await update.message.reply_text("Iltimos til tanlang yoki matn yuboring.")
+    # Auto detect - inglizcha yoki o‘zbekcha
+    target_lang = context.user_data.get('target_lang', 'en')
+    try:
+        result = GoogleTranslator(source='auto', target=target_lang).translate(user_text)
+        user_history[user_id].append({'input': user_text, 'output': result})
+        await update.message.reply_text(f"Tarjima ({target_lang}): {result}")
+    except Exception as e:
+        await update.message.reply_text(f"Xatolik: {e}")
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
