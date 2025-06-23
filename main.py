@@ -4,13 +4,14 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from deep_translator import GoogleTranslator
 
+# .env fayldan token olish
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
-# Tarjima tarixi uchun
+# Tarjima tarixi
 user_history = {}
 
-# Kerakli tillar
+# Til kodi ro‘yxati
 LANGUAGES = {
     'English': 'en',
     'Russian': 'ru',
@@ -29,15 +30,30 @@ LANGUAGES = {
     'Kyrgyz': 'ky'
 }
 
-keyboard = ReplyKeyboardMarkup(
-    [[lang for lang in list(LANGUAGES.keys())[:5]],
-     [lang for lang in list(LANGUAGES.keys())[5:10]],
-     [lang for lang in list(LANGUAGES.keys())[10:]]],
+# Asosiy menyu tugmalari
+main_keyboard = ReplyKeyboardMarkup(
+    [
+        ['🌍 Til tanlash', '🔄 Auto Detect'],
+        ['📖 Tarjima tarixi', '🗑 Tarixni tozalash']
+    ],
+    resize_keyboard=True
+)
+
+# Til tanlash menyusi
+language_keyboard = ReplyKeyboardMarkup(
+    [
+        [lang for lang in list(LANGUAGES.keys())[:5]],
+        [lang for lang in list(LANGUAGES.keys())[5:10]],
+        [lang for lang in list(LANGUAGES.keys())[10:]]
+    ],
     resize_keyboard=True
 )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Tilni tanlang yoki Auto detect rejimda matn yuboring:", reply_markup=keyboard)
+    await update.message.reply_text(
+        "Xush kelibsiz! Quyidagilardan birini tanlang:", 
+        reply_markup=main_keyboard
+    )
 
 async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -46,12 +62,32 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in user_history:
         user_history[user_id] = []
 
-    if user_text in LANGUAGES:
-        context.user_data['target_lang'] = LANGUAGES[user_text]
-        await update.message.reply_text(f"Target language set to: {user_text}. Endi matn yuboring.")
+    # Asosiy menyu tanlovi
+    if user_text == '🌍 Til tanlash':
+        await update.message.reply_text("Tilni tanlang:", reply_markup=language_keyboard)
         return
 
-    # Auto detect - inglizcha yoki o‘zbekcha
+    if user_text == '🔄 Auto Detect':
+        context.user_data['target_lang'] = 'en'
+        await update.message.reply_text("Auto detect rejimi tanlandi. Endi matn yuboring.")
+        return
+
+    if user_text == '📖 Tarjima tarixi':
+        await history(update, context)
+        return
+
+    if user_text == '🗑 Tarixni tozalash':
+        user_history[user_id] = []
+        await update.message.reply_text("Tarix tozalandi.")
+        return
+
+    # Til tanlangan bo‘lsa
+    if user_text in LANGUAGES:
+        context.user_data['target_lang'] = LANGUAGES[user_text]
+        await update.message.reply_text(f"Target til: {user_text}. Endi matn yuboring.")
+        return
+
+    # Matn tarjima qilish
     target_lang = context.user_data.get('target_lang', 'en')
     try:
         result = GoogleTranslator(source='auto', target=target_lang).translate(user_text)
@@ -65,7 +101,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     history_list = user_history.get(user_id, [])
 
     if not history_list:
-        await update.message.reply_text("Sizda tarix yo‘q.")
+        await update.message.reply_text("Sizda tarjima tarixi yo‘q.")
     else:
         text = "\n\n".join([f"👤 {h['input']} \n➡️ {h['output']}" for h in history_list[-5:]])
         await update.message.reply_text(f"Oxirgi tarjimalar:\n{text}")
@@ -74,7 +110,6 @@ def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("history", history))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate_text))
 
     print("Bot ishga tushdi...")
