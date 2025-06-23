@@ -1,47 +1,59 @@
 import os
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from googletrans import Translator
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
+from deep_translator import GoogleTranslator
 
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-translator = Translator()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-SUPPORTED_LANGUAGES = ['uz', 'ru', 'en', 'ko', 'de', 'fr', 'es', 'tr', 'ar', 'zh-cn']
+# Tanlangan tilni saqlash uchun (foydalanuvchi uchun)
+user_lang = {}
 
-def choose_target_lang(detected_lang):
-    for lang in SUPPORTED_LANGUAGES:
-        if lang != detected_lang:
-            return lang
-    return 'en'
-
+# /start buyrug'i
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Salom! Matn yuboring va men uni tarjima qilaman.")
+    keyboard = [
+        [InlineKeyboardButton("Ingliz tili 🇬🇧", callback_data='en')],
+        [InlineKeyboardButton("Rus tili 🇷🇺", callback_data='ru')],
+        [InlineKeyboardButton("Koreys tili 🇰🇷", callback_data='ko')],
+        [InlineKeyboardButton("Fransuz tili 🇫🇷", callback_data='fr')],
+        [InlineKeyboardButton("Nemis tili 🇩🇪", callback_data='de')],
+        [InlineKeyboardButton("Italya tili 🇮🇹", callback_data='it')],
+        [InlineKeyboardButton("Yapon tili 🇯🇵", callback_data='ja')],
+        [InlineKeyboardButton("Xitoy tili 🇨🇳", callback_data='zh-CN')],
+        [InlineKeyboardButton("Ispan tili 🇪🇸", callback_data='es')],
+        [InlineKeyboardButton("Arab tili 🇸🇦", callback_data='ar')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text('Tarjima tilini tanlang:', reply_markup=reply_markup)
 
+# Tugma bosilganda
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_lang[query.from_user.id] = query.data
+    await query.edit_message_text(text=f"Tanlangan til kodi: {query.data}. Endi xabar yuboring.")
+
+# Matn kelganda
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    detection = translator.detect(text)
-    detected_lang = detection.lang
+    user_id = update.message.from_user.id
+    target_lang = user_lang.get(user_id)
 
-    if detected_lang not in SUPPORTED_LANGUAGES:
-        await update.message.reply_text("Kechirasiz, bu til hozircha qo'llab-quvvatlanmaydi.")
+    if not target_lang:
+        await update.message.reply_text("Iltimos, /start buyrug'ini bosib til tanlang.")
         return
 
-    target_lang = choose_target_lang(detected_lang)
-    translated = translator.translate(text, dest=target_lang)
-
-    response = (f"🔍 Aniqlangan til: {detected_lang}\n"
-                f"🎯 Tarjima ({target_lang}): {translated.text}")
-    await update.message.reply_text(response)
+    text = update.message.text
+    translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
+    await update.message.reply_text(f"Tarjima: {translated}")
 
 def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate))
-    print("Bot ishga tushdi...")
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
