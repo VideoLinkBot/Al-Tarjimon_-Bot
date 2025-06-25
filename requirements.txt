@@ -1,3 +1,5 @@
 python-telegram-bot==20.3
 python-dotenv
-deep-translator==1.11.4
+deep-translator
+pillow
+pytesseract
