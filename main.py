@@ -5,21 +5,22 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from deep_translator import GoogleTranslator
 
+# .env dagi o‘zgaruvchilarni yuklash
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-OCR_API_KEY = os.getenv('OCR_API_KEY')
+OCR_API_KEY = os.getenv('OCR_API_KEY')  # OCR.space API kalit
+
 ADMIN_ID = 6905227976  # Sizning Telegram ID'ingiz
 
-# Tarjima tarixi va statistika
+# Tarix va statistika
 user_history = {}
 user_stats = {}
 
-# Tillar
+# Tarjima tillari
 LANGUAGES = {
-    'English': 'en', 'Russian': 'ru', 'Uzbek': 'uz', 'Korean': 'ko',
-    'French': 'fr', 'German': 'de', 'Chinese': 'zh', 'Japanese': 'ja',
-    'Spanish': 'es', 'Arabic': 'ar', 'Turkish': 'tr', 'Italian': 'it',
-    'Hindi': 'hi', 'Kazakh': 'kk', 'Kyrgyz': 'ky'
+    'English': 'en', 'Russian': 'ru', 'Uzbek': 'uz', 'Korean': 'ko', 'French': 'fr',
+    'German': 'de', 'Chinese': 'zh', 'Japanese': 'ja', 'Spanish': 'es', 'Arabic': 'ar',
+    'Turkish': 'tr', 'Italian': 'it', 'Hindi': 'hi', 'Kazakh': 'kk', 'Kyrgyz': 'ky'
 }
 
 # Tugmalar
@@ -39,22 +40,18 @@ lang_keyboard = ReplyKeyboardMarkup(
 
 # /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Tilni tanlang yoki Auto detect rejimda matn yuboring:",
-        reply_markup=main_keyboard
-    )
+    await update.message.reply_text("Tilni tanlang yoki matn yuboring:", reply_markup=main_keyboard)
 
-# Matnli xabarlar bilan ishlash
+# Matn tarjima qilish
 async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_text = update.message.text
-    user_stats[user_id] = user_stats.get(user_id, 0)
 
-    if user_id not in user_history:
-        user_history[user_id] = []
+    user_stats[user_id] = user_stats.get(user_id, 0)
+    user_history.setdefault(user_id, [])
 
     if user_text == '🌍 Til tanlash':
-        await update.message.reply_text("Quyidan tilni tanlang:", reply_markup=lang_keyboard)
+        await update.message.reply_text("Tilni tanlang:", reply_markup=lang_keyboard)
         return
 
     if user_text in LANGUAGES:
@@ -64,15 +61,15 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_text == '🔄 Auto Detect':
         context.user_data['target_lang'] = 'en'
-        await update.message.reply_text("Auto detect tanlandi. Matn yuboring.", reply_markup=main_keyboard)
+        await update.message.reply_text("Auto detect tanlandi. Endi matn yuboring.", reply_markup=main_keyboard)
         return
 
     if user_text == '📖 Tarjima tarixi':
-        history = user_history.get(user_id, [])
-        if not history:
-            await update.message.reply_text("Sizda tarix yo‘q.", reply_markup=main_keyboard)
+        history_list = user_history[user_id]
+        if not history_list:
+            await update.message.reply_text("Tarjima tarixi yo‘q.", reply_markup=main_keyboard)
         else:
-            text = "\n\n".join([f"👤 {h['input']}\n➡️ {h['output']}" for h in history[-5:]])
+            text = "\n\n".join([f"👤 {h['input']} \n➡️ {h['output']}" for h in history_list[-5:]])
             await update.message.reply_text(f"Oxirgi tarjimalar:\n{text}", reply_markup=main_keyboard)
         return
 
@@ -83,17 +80,14 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_text == '📊 Statistika':
         if user_id == ADMIN_ID:
-            total_users = len(user_stats)
-            total_translations = sum(user_stats.values())
             await update.message.reply_text(
-                f"📊 Statistika:\n👥 Foydalanuvchilar: {total_users}\n🔤 Tarjimalar: {total_translations}",
+                f"📊 Statistika:\n👥 Foydalanuvchilar: {len(user_stats)}\n🔤 Tarjimalar soni: {sum(user_stats.values())}",
                 reply_markup=main_keyboard
             )
         else:
             await update.message.reply_text("Ushbu bo‘lim faqat admin uchun.", reply_markup=main_keyboard)
         return
 
-    # Tarjima qilish
     target_lang = context.user_data.get('target_lang', 'en')
     try:
         result = GoogleTranslator(source='auto', target=target_lang).translate(user_text)
@@ -103,41 +97,40 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_keyboard)
 
-# 🖼 OCR: Rasm orqali matn o‘qish va tarjima
+# 📷 Rasmli OCR funksiyasi
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    target_lang = context.user_data.get('target_lang', 'en')
-
     photo = update.message.photo[-1]
-    file = await context.bot.get_file(photo.file_id)
-    image_url = file.file_path
+    file = await photo.get_file()
+    file_path = f"{file.file_unique_id}.jpg"
+    await file.download_to_drive(file_path)
+
+    with open(file_path, 'rb') as img:
+        files = {'file': img}
+        data = {"apikey": OCR_API_KEY, "language": "eng"}
+        response = requests.post("https://api.ocr.space/parse/image", files=files, data=data)
 
     try:
-        response = requests.post(
-            "https://api.ocr.space/parse/image",
-            data={"apikey": OCR_API_KEY, "url": image_url, "language": "eng"}
-        )
         result = response.json()
         text = result['ParsedResults'][0]['ParsedText']
 
-        if not text.strip():
-            await update.message.reply_text("❌ Rasmda matn topilmadi.")
-            return
-
+        target_lang = context.user_data.get('target_lang', 'en')
         translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
-        await update.message.reply_text(f"📷 Matn:\n{text}\n\n🔤 Tarjima:\n{translated}")
 
+        user_stats[user_id] += 1
+        user_history.setdefault(user_id, []).append({'input': text, 'output': translated})
+
+        await update.message.reply_text(f"📷 Rasm matni:\n{text}\n\n🔁 Tarjima ({target_lang}):\n{translated}", reply_markup=main_keyboard)
     except Exception as e:
-        await update.message.reply_text(f"Xatolik: {e}")
+        await update.message.reply_text(f"❌ OCR yoki tarjima xatosi: {e}", reply_markup=main_keyboard)
 
-# Botni ishga tushirish
+# Asosiy funksiya
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate_text))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-
-    print("🤖 Bot ishga tushdi...")
+    print("Bot ishga tushdi...")
     app.run_polling()
 
 if __name__ == "__main__":
