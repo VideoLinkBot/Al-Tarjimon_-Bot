@@ -3,37 +3,28 @@ from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from deep_translator import GoogleTranslator
+from PIL import Image
+import pytesseract
+from io import BytesIO
 
+# Yuklash
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
-# Faqat admin (sizning) Telegram ID
-ADMIN_ID = 6905227976  
+# Admin uchun Telegram ID
+ADMIN_ID = 6905227976
 
-# Tarjima tarixi va statistika
+# Tarix va statistika
 user_history = {}
-user_stats = {}  # Statistika uchun foydalanuvchi soni va tarjimalar
+user_stats = {}
 
-# Kerakli tillar
+# Til sozlamalari
 LANGUAGES = {
-    'English': 'en',
-    'Russian': 'ru',
-    'Uzbek': 'uz',
-    'Korean': 'ko',
-    'French': 'fr',
-    'German': 'de',
-    'Chinese': 'zh',
-    'Japanese': 'ja',
-    'Spanish': 'es',
-    'Arabic': 'ar',
-    'Turkish': 'tr',
-    'Italian': 'it',
-    'Hindi': 'hi',
-    'Kazakh': 'kk',
-    'Kyrgyz': 'ky'
+    'English': 'en', 'Russian': 'ru', 'Uzbek': 'uz', 'Korean': 'ko', 'French': 'fr',
+    'German': 'de', 'Chinese': 'zh', 'Japanese': 'ja', 'Spanish': 'es', 'Arabic': 'ar',
+    'Turkish': 'tr', 'Italian': 'it', 'Hindi': 'hi', 'Kazakh': 'kk', 'Kyrgyz': 'ky'
 }
 
-# Tugmalar
 main_keyboard = ReplyKeyboardMarkup(
     [
         ['🌍 Til tanlash', '🔄 Auto Detect'],
@@ -55,7 +46,6 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_text = update.message.text
 
-    # Statistika uchun hisoblash
     user_stats[user_id] = user_stats.get(user_id, 0)
 
     if user_id not in user_history:
@@ -68,14 +58,14 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_text in LANGUAGES:
         context.user_data['target_lang'] = LANGUAGES[user_text]
         await update.message.reply_text(
-            f"Target language set to: {user_text}. Endi matn yuboring.",
+            f"{user_text} tili tanlandi. Endi matn yuboring.",
             reply_markup=main_keyboard
         )
         return
 
     if user_text == '🔄 Auto Detect':
         context.user_data['target_lang'] = 'en'
-        await update.message.reply_text("Auto detect rejimi tanlandi. Endi matn yuboring.", reply_markup=main_keyboard)
+        await update.message.reply_text("Auto detect tanlandi. Endi matn yuboring.", reply_markup=main_keyboard)
         return
 
     if user_text == '📖 Tarjima tarixi':
@@ -104,20 +94,41 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Ushbu bo‘lim faqat admin uchun.", reply_markup=main_keyboard)
         return
 
+    # Tarjima qilish
     target_lang = context.user_data.get('target_lang', 'en')
     try:
         result = GoogleTranslator(source='auto', target=target_lang).translate(user_text)
         user_history[user_id].append({'input': user_text, 'output': result})
-        user_stats[user_id] += 1  # Har bir tarjima uchun hisob
+        user_stats[user_id] += 1
         await update.message.reply_text(f"Tarjima ({target_lang}): {result}", reply_markup=main_keyboard)
     except Exception as e:
         await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_keyboard)
+
+# 📸 RASMNI MATNGA AYLANTRUVCHI FUNKSIYA
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    photo = await update.message.photo[-1].get_file()
+    photo_bytes = await photo.download_as_bytearray()
+
+    image = Image.open(BytesIO(photo_bytes))
+
+    try:
+        text = pytesseract.image_to_string(image, lang='eng+rus+uzb')
+        if text.strip():
+            user_stats[user_id] = user_stats.get(user_id, 0) + 1
+            user_history[user_id] = user_history.get(user_id, []) + [{'input': '📷Rasm', 'output': text}]
+            await update.message.reply_text(f"📄 Rasmdagi matn:\n{text}", reply_markup=main_keyboard)
+        else:
+            await update.message.reply_text("❌ Rasmda matn topilmadi.", reply_markup=main_keyboard)
+    except Exception as e:
+        await update.message.reply_text(f"Xatolik yuz berdi: {e}", reply_markup=main_keyboard)
 
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate_text))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     print("Bot ishga tushdi...")
     app.run_polling()
