@@ -1,0 +1,22 @@
+# Python 3.12 bazasidan foydalanamiz
+FROM python:3.12
+
+# Tesseract OCR'ni o‘rnatamiz
+RUN apt-get update && \
+    apt-get install -y tesseract-ocr && \
+    apt-get clean
+
+# Ishchi papkani /app qilib belgilaymiz
+WORKDIR /app
+
+# Kutubxonalar ro‘yxatini nusxalab olamiz
+COPY requirements.txt .
+
+# Kutubxonalarni o‘rnatamiz
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Barcha fayllarni konteynerga ko‘chiramiz
+COPY . .
+
+# Botni ishga tushiramiz
+CMD ["python", "main.py"]
