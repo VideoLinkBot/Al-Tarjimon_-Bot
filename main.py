@@ -4,13 +4,14 @@ from uuid import uuid4
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, Bot
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, InlineQueryHandler
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
+    filters, InlineQueryHandler
 )
 from deep_translator import GoogleTranslator
 
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ADMIN_ID = 6905227976  # Sizning Telegram ID
+ADMIN_ID = 6905227976
 
 LANGUAGES = {
     'English': 'en', 'Russian': 'ru', 'Uzbek': 'uz', 'Korean': 'ko', 'French': 'fr',
@@ -20,7 +21,7 @@ LANGUAGES = {
 
 user_history = {}
 
-# --- user_stats.json fayldan yuklash va saqlash funksiyalari ---
+# Foydalanuvchilar statistikasi fayldan o‘qiladi
 def load_user_stats():
     try:
         with open("user_stats.json", "r", encoding="utf-8") as f:
@@ -34,6 +35,7 @@ def save_user_stats(stats):
 
 user_stats = load_user_stats()
 
+# Klaviatura
 main_keyboard = ReplyKeyboardMarkup(
     [
         ['🌍 Til tanlash', '🔄 Auto Detect'],
@@ -101,7 +103,7 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Tarix tozalandi.", reply_markup=main_keyboard)
         return
 
-    # 📊 Faqat admin ko‘rishi mumkin bo‘lgan statistikani chiqarish
+    # Statistika faqat admin ko‘radi
     if user_text == '📊 Statistika':
         if int(user_id) != ADMIN_ID:
             await update.message.reply_text("❌ Bu bo‘lim faqat admin uchun!", reply_markup=main_keyboard)
@@ -118,7 +120,7 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Matn tarjimasi qilish
+    # Tarjima qilish
     target_lang = context.user_data.get('target_lang', 'en')
     try:
         result = GoogleTranslator(source='auto', target=target_lang).translate(user_text)
@@ -159,6 +161,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await update.inline_query.answer(results, cache_time=60)
 
+# Bot tavsifini yangilash (12K+ foydalanuvchi)
 async def update_bot_description(app):
     desc = "Al Tarjimon Bot — oyda taxminan 12K+ foydalanuvchi 🇺🇿🌍"
     bot: Bot = app.bot
@@ -169,18 +172,16 @@ async def update_bot_description(app):
         print(f"Tavsiya yangilanishida xatolik: {e}")
 
 def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    
+    async def on_startup(app):
+        await update_bot_description(app)
+
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(on_startup).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate_text))
     app.add_handler(InlineQueryHandler(inline_query_handler))
-    
-    async def on_startup():
-        await update_bot_description(app)
-    
-    app.post_init = on_startup
-    
+
     print("Bot ishga tushdi...")
     app.run_polling()
 
