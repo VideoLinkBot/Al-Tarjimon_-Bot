@@ -1,37 +1,45 @@
 import os
-import requests
-import fitz  # PyMuPDF
+import json
 from uuid import uuid4
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
+from telegram import Update, ReplyKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, Bot
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, InlineQueryHandler
 )
 from deep_translator import GoogleTranslator
 
-# .env dan tokenlar
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OCR_API_KEY = os.getenv("OCR_API_KEY")  # OCR.space API kaliti
-ADMIN_ID = 6905227976  # Sizning Telegram ID’ingiz
+ADMIN_ID = 6905227976  # Sizning Telegram ID
 
-# Tarjima tillari
 LANGUAGES = {
     'English': 'en', 'Russian': 'ru', 'Uzbek': 'uz', 'Korean': 'ko', 'French': 'fr',
     'German': 'de', 'Chinese': 'zh', 'Japanese': 'ja', 'Spanish': 'es', 'Arabic': 'ar',
     'Turkish': 'tr', 'Italian': 'it', 'Hindi': 'hi', 'Kazakh': 'kk', 'Kyrgyz': 'ky'
 }
 
-# Tarix va statistika
 user_history = {}
-user_stats = {}
 
-# Tugmalar
+# --- user_stats.json fayldan yuklash va saqlash funksiyalari ---
+def load_user_stats():
+    try:
+        with open("user_stats.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_user_stats(stats):
+    with open("user_stats.json", "w", encoding="utf-8") as f:
+        json.dump(stats, f, ensure_ascii=False)
+
+user_stats = load_user_stats()
+
 main_keyboard = ReplyKeyboardMarkup(
     [
         ['🌍 Til tanlash', '🔄 Auto Detect'],
+        ['📄 PDF tarjima qilish'],
         ['📖 Tarjima tarixi', '🗑 Tarixni tozalash'],
-        ['📊 Statistika', '📄 PDF tarjima qilish']
+        ['📊 Statistika']
     ],
     resize_keyboard=True
 )
@@ -41,15 +49,28 @@ lang_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Tilni tanlang yoki matn yuboring:", reply_markup=main_keyboard)
 
-# Matndan matnga tarjima
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🧠 Al Tarjimon Bot yordam:\n\n"
+        "📌 Yuboring:\n"
+        "— Oddiy matn: avtomatik tarjima bo‘ladi\n"
+        "— PDF fayl: matnni chiqarib tarjima qiladi\n"
+        "— Inline qidiruv: @AlTarjimonBot so‘z\n\n"
+        "🛠 Tugmalar:\n"
+        "🌍 Til tanlash – tarjima tilini tanlash\n"
+        "🔄 Auto Detect – avtomatik aniqlash\n"
+        "📖 Tarjima tarixi – oxirgi 5 ta tarjima\n"
+        "📄 PDF tarjima qilish – fayl yuboring\n"
+        "📊 Statistika – umumiy foydalanuvchilar soni\n\n"
+        "👨‍💻 Yaratuvchi: @Ziyqulov_Behruz"
+    )
+
 async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)
     user_text = update.message.text
-    user_stats[user_id] = user_stats.get(user_id, 0)
     user_history.setdefault(user_id, [])
 
     if user_text == '🌍 Til tanlash':
@@ -80,87 +101,36 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Tarix tozalandi.", reply_markup=main_keyboard)
         return
 
+    # 📊 Faqat admin ko‘rishi mumkin bo‘lgan statistikani chiqarish
     if user_text == '📊 Statistika':
-        if user_id == ADMIN_ID:
-            await update.message.reply_text(
-                f"📊 Statistika:\n👥 Foydalanuvchilar: {len(user_stats)}\n🔤 Tarjimalar soni: {sum(user_stats.values())}",
-                reply_markup=main_keyboard
-            )
-        else:
-            await update.message.reply_text("Ushbu bo‘lim faqat admin uchun.", reply_markup=main_keyboard)
+        if int(user_id) != ADMIN_ID:
+            await update.message.reply_text("❌ Bu bo‘lim faqat admin uchun!", reply_markup=main_keyboard)
+            return
+
+        total_users = len(user_stats)
+        total_translations = sum(user_stats.values())
+
+        await update.message.reply_text(
+            f"📊 Statistika (Admin):\n"
+            f"👥 Umumiy foydalanuvchilar: {total_users}\n"
+            f"🔤 Tarjimalar soni: {total_translations}",
+            reply_markup=main_keyboard
+        )
         return
 
-    if user_text == '📄 PDF tarjima qilish':
-        await update.message.reply_text("📄 Iltimos, tarjima qilmoqchi bo‘lgan PDF faylni yuboring.", reply_markup=main_keyboard)
-        return
-
+    # Matn tarjimasi qilish
     target_lang = context.user_data.get('target_lang', 'en')
     try:
         result = GoogleTranslator(source='auto', target=target_lang).translate(user_text)
         user_history[user_id].append({'input': user_text, 'output': result})
-        user_stats[user_id] += 1
+
+        user_stats[user_id] = user_stats.get(user_id, 0) + 1
+        save_user_stats(user_stats)
+
         await update.message.reply_text(f"Tarjima ({target_lang}): {result}", reply_markup=main_keyboard)
     except Exception as e:
         await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_keyboard)
 
-# 📷 OCR – rasm matnini tarjima qilish
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    photo = update.message.photo[-1]
-    file = await photo.get_file()
-    file_path = f"{file.file_unique_id}.jpg"
-    await file.download_to_drive(file_path)
-
-    with open(file_path, 'rb') as img:
-        files = {'file': img}
-        data = {"apikey": OCR_API_KEY, "language": "eng"}
-        response = requests.post("https://api.ocr.space/parse/image", files=files, data=data)
-
-    try:
-        result = response.json()
-        text = result['ParsedResults'][0]['ParsedText']
-        target_lang = context.user_data.get('target_lang', 'en')
-        translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
-        user_stats[user_id] += 1
-        user_history.setdefault(user_id, []).append({'input': text, 'output': translated})
-        await update.message.reply_text(f"📷 Rasm matni:\n{text}\n\n🔁 Tarjima ({target_lang}):\n{translated}", reply_markup=main_keyboard)
-    except Exception as e:
-        await update.message.reply_text(f"❌ OCR yoki tarjima xatosi: {e}", reply_markup=main_keyboard)
-
-# 📄 PDF fayldan matn o‘qib tarjima qilish
-async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    document = update.message.document
-
-    if not document.file_name.endswith(".pdf"):
-        await update.message.reply_text("❌ Faqat PDF faylni yuboring.")
-        return
-
-    file = await document.get_file()
-    file_path = f"{file.file_unique_id}.pdf"
-    await file.download_to_drive(file_path)
-
-    try:
-        text = ""
-        with fitz.open(file_path) as doc:
-            for page in doc:
-                text += page.get_text()
-
-        if not text.strip():
-            await update.message.reply_text("⚠️ PDF faylda matn topilmadi.")
-            return
-
-        target_lang = context.user_data.get('target_lang', 'en')
-        translated = GoogleTranslator(source='auto', target=target_lang).translate(text[:5000])
-
-        user_stats[user_id] = user_stats.get(user_id, 0) + 1
-        user_history.setdefault(user_id, []).append({'input': '[PDF]', 'output': translated})
-
-        await update.message.reply_text(f"📄 PDF tarjimasi ({target_lang}):\n{translated[:4000]}", reply_markup=main_keyboard)
-    except Exception as e:
-        await update.message.reply_text(f"❌ PDF tarjima xatosi: {e}", reply_markup=main_keyboard)
-
-# 🔍 Inline query – faqat 3 asosiy til
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
     results = []
@@ -184,21 +154,34 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     input_message_content=InputTextMessageContent(f"{name}:\n{translated}")
                 )
             )
-        except Exception as e:
-            print(f"Xatolik: {e}")
+        except:
             continue
 
     await update.inline_query.answer(results, cache_time=60)
 
-# Botni ishga tushurish
+async def update_bot_description(app):
+    desc = "Al Tarjimon Bot — oyda taxminan 12K+ foydalanuvchi 🇺🇿🌍"
+    bot: Bot = app.bot
+    try:
+        await bot.set_my_description(description=desc)
+        print(f"Bot tavsifi yangilandi: {desc}")
+    except Exception as e:
+        print(f"Tavsiya yangilanishida xatolik: {e}")
+
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate_text))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf))  # PDF handler
     app.add_handler(InlineQueryHandler(inline_query_handler))
-    print("✅ Bot ishga tushdi...")
+    
+    async def on_startup():
+        await update_bot_description(app)
+    
+    app.post_init = on_startup
+    
+    print("Bot ishga tushdi...")
     app.run_polling()
 
 if __name__ == "__main__":
