@@ -1,53 +1,35 @@
 import os
-import random
 import requests
+from uuid import uuid4
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, ReplyKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, InlineQueryHandler
+)
 from deep_translator import GoogleTranslator
 
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-OCR_API_KEY = os.getenv('OCR_API_KEY')
-ADMIN_ID = 6905227976
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OCR_API_KEY = os.getenv("OCR_API_KEY")  # OCR.space API kaliti
+ADMIN_ID = 6905227976  # Sizning ID
 
-user_history = {}
-user_stats = {}
-
+# Tarjima tillari
 LANGUAGES = {
     'English': 'en', 'Russian': 'ru', 'Uzbek': 'uz', 'Korean': 'ko', 'French': 'fr',
     'German': 'de', 'Chinese': 'zh', 'Japanese': 'ja', 'Spanish': 'es', 'Arabic': 'ar',
     'Turkish': 'tr', 'Italian': 'it', 'Hindi': 'hi', 'Kazakh': 'kk', 'Kyrgyz': 'ky'
 }
 
-motivatsiyalar = [
-    "Har bir yangi so‘z – bu yangi imkoniyat!",
-    "Har kuni 10 ta so‘z o‘rgan, 1 yilda 3650 ta so‘z bilasan!",
-    "Tilingni mashq qilmasang, u qotib qoladi!",
-    "Til o‘rganish – sabr va izchillik san’atidir!",
-    "Bugun bir so‘z o‘rgansang, ertaga gapira boshlaysan!",
-    "Til bilgan – dunyoni biladi!",
-    "Hech narsa o‘z-o‘zidan bo‘lmaydi – harakat qil!",
-    "Bugun qilgan kichik mashqing, ertaga katta natija beradi!",
-    "Inglizcha 'never give up' degani – hech qachon taslim bo‘lma!",
-    "Qiyin – vaqtincha, bilim – abadiy!",
-    "Til – bu qurol. Uni o‘rgansang, dunyo seniki!",
-    "Bir so‘z – bir eshik. Ko‘proq eshik och!",
-    "Mashq – bilim onasi!",
-    "Tilni yaxshi bilgan odam – yaxshi imkoniyatlarga ega!",
-    "Har kuni 5 daqiqa til mashqi qil!",
-    "Qiziqish bo‘lsa, til oson o‘rganiladi!",
-    "Ertalabki 10 daqiqa tilga bag‘ishla – kun samarali bo‘ladi!",
-    "Bugun boshlamasang, ertaga kech bo‘ladi!",
-    "Biror narsa o‘rganmasang, yo‘qotasan!",
-    "Til – bu sarmoya. Har kuni unga sarmoya qil!"
-]
+# Tarix va statistika
+user_history = {}
+user_stats = {}
 
+# Asosiy tugmalar
 main_keyboard = ReplyKeyboardMarkup(
     [
         ['🌍 Til tanlash', '🔄 Auto Detect'],
         ['📖 Tarjima tarixi', '🗑 Tarixni tozalash'],
-        ['📊 Statistika', '💡 Til motivatsiyasi']
+        ['📊 Statistika']
     ],
     resize_keyboard=True
 )
@@ -57,13 +39,14 @@ lang_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Tilni tanlang yoki matn yuboring:", reply_markup=main_keyboard)
 
+# Matndan matnga tarjima
 async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_text = update.message.text
-
     user_stats[user_id] = user_stats.get(user_id, 0)
     user_history.setdefault(user_id, [])
 
@@ -105,11 +88,6 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Ushbu bo‘lim faqat admin uchun.", reply_markup=main_keyboard)
         return
 
-    if user_text == '💡 Til motivatsiyasi':
-        motivatsiya = random.choice(motivatsiyalar)
-        await update.message.reply_text(f"{motivatsiya}", reply_markup=main_keyboard)
-        return
-
     target_lang = context.user_data.get('target_lang', 'en')
     try:
         result = GoogleTranslator(source='auto', target=target_lang).translate(user_text)
@@ -119,6 +97,7 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_keyboard)
 
+# Rasmdan matn chiqarish va tarjima qilish
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     photo = update.message.photo[-1]
@@ -134,22 +113,44 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         result = response.json()
         text = result['ParsedResults'][0]['ParsedText']
-
         target_lang = context.user_data.get('target_lang', 'en')
         translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
-
         user_stats[user_id] += 1
         user_history.setdefault(user_id, []).append({'input': text, 'output': translated})
-
         await update.message.reply_text(f"📷 Rasm matni:\n{text}\n\n🔁 Tarjima ({target_lang}):\n{translated}", reply_markup=main_keyboard)
     except Exception as e:
         await update.message.reply_text(f"❌ OCR yoki tarjima xatosi: {e}", reply_markup=main_keyboard)
 
+# 🔎 Inline query: 15 ta tilga tarjima
+async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.inline_query.query
+    results = []
+
+    if not query:
+        return
+
+    for name, code in LANGUAGES.items():
+        try:
+            translated = GoogleTranslator(source='auto', target=code).translate(query)
+            results.append(
+                InlineQueryResultArticle(
+                    id=str(uuid4()),
+                    title=f"{name}",
+                    input_message_content=InputTextMessageContent(f"{name}:\n{translated}")
+                )
+            )
+        except:
+            continue
+
+    await update.inline_query.answer(results[:15], cache_time=1)
+
+# Botni ishga tushirish
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate_text))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(InlineQueryHandler(inline_query_handler))
     print("Bot ishga tushdi...")
     app.run_polling()
 
