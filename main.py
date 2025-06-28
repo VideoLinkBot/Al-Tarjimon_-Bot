@@ -2,6 +2,7 @@ import os
 import json
 from uuid import uuid4
 from dotenv import load_dotenv
+import fitz  # PyMuPDF
 from telegram import Update, ReplyKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, Bot
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
@@ -21,7 +22,6 @@ LANGUAGES = {
 
 user_history = {}
 
-# Foydalanuvchilar statistikasi fayldan o‘qiladi
 def load_user_stats():
     try:
         with open("user_stats.json", "r", encoding="utf-8") as f:
@@ -103,7 +103,6 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Tarix tozalandi.", reply_markup=main_keyboard)
         return
 
-    # Statistika faqat admin ko‘radi
     if user_text == '📊 Statistika':
         if int(user_id) != ADMIN_ID:
             await update.message.reply_text("❌ Bu bo‘lim faqat admin uchun!", reply_markup=main_keyboard)
@@ -120,7 +119,6 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Tarjima qilish
     target_lang = context.user_data.get('target_lang', 'en')
     try:
         result = GoogleTranslator(source='auto', target=target_lang).translate(user_text)
@@ -132,6 +130,32 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Tarjima ({target_lang}): {result}", reply_markup=main_keyboard)
     except Exception as e:
         await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_keyboard)
+
+async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    document = update.message.document
+
+    if not document.file_name.endswith('.pdf'):
+        await update.message.reply_text("❌ Iltimos, faqat PDF fayl yuboring.")
+        return
+
+    file = await context.bot.get_file(document.file_id)
+    file_path = f"{document.file_unique_id}.pdf"
+    await file.download_to_drive(file_path)
+
+    text = ""
+    with fitz.open(file_path) as doc:
+        for page in doc:
+            text += page.get_text()
+
+    if not text.strip():
+        await update.message.reply_text("❌ PDF ichida matn topilmadi.")
+        return
+
+    try:
+        translated = GoogleTranslator(source='auto', target='uz').translate(text)
+        await update.message.reply_text(f"📄 PDF tarjima natijasi:\n\n{translated[:4000]}")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Tarjimada xatolik: {e}")
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
@@ -161,7 +185,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await update.inline_query.answer(results, cache_time=60)
 
-# Bot tavsifini yangilash (12K+ foydalanuvchi)
 async def update_bot_description(app):
     desc = "Al Tarjimon Bot — oyda taxminan 12K+ foydalanuvchi 🇺🇿🌍"
     bot: Bot = app.bot
@@ -180,6 +203,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate_text))
+    app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf))
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
     print("Bot ishga tushdi...")
