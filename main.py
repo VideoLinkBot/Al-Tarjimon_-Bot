@@ -10,10 +10,12 @@ from telegram.ext import (
 )
 from deep_translator import GoogleTranslator
 
+# .env fayldan tokenni yuklash
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = 6905227976
 
+# Qo‘llab-quvvatlanadigan tillar
 LANGUAGES = {
     'English': 'en', 'Russian': 'ru', 'Uzbek': 'uz', 'Korean': 'ko', 'French': 'fr',
     'German': 'de', 'Chinese': 'zh', 'Japanese': 'ja', 'Spanish': 'es', 'Arabic': 'ar',
@@ -51,9 +53,11 @@ lang_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# /start buyrug‘i
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Tilni tanlang yoki matn yuboring:", reply_markup=main_keyboard)
 
+# /help buyrug‘i
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🧠 Al Tarjimon Bot yordam:\n\n"
@@ -70,6 +74,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👨‍💻 Yaratuvchi: @Ziyqulov_Behruz"
     )
 
+# Matn tarjimasi
 async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     user_text = update.message.text
@@ -131,6 +136,7 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_keyboard)
 
+# PDF fayl tarjimasi
 async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
 
@@ -157,6 +163,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ Tarjimada xatolik: {e}")
 
+# Inline tarjima
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
     results = []
@@ -185,6 +192,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await update.inline_query.answer(results, cache_time=60)
 
+# Bot tavsifini yangilash
 async def update_bot_description(app):
     desc = "Al Tarjimon Bot — oyda taxminan 12K+ foydalanuvchi 🇺🇿🌍"
     bot: Bot = app.bot
@@ -192,9 +200,9 @@ async def update_bot_description(app):
         await bot.set_my_description(description=desc)
         print(f"Bot tavsifi yangilandi: {desc}")
     except Exception as e:
-        print(f"Tavsiya yangilanishida xatolik: {e}")
+        print(f"Tavsif yangilanishida xatolik: {e}")
 
-# ✅ To‘g‘rilangan qism
+# ✅ To‘g‘rilangan asosiy qism
 def main():
     async def on_startup(app):
         await update_bot_description(app)
