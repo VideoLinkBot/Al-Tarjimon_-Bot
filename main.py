@@ -203,8 +203,13 @@ async def update_bot_description(app):
         print(f"Tavsif yangilanishida xatolik: {e}")
 
 # ✅ To‘g‘rilangan asosiy qism
-def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+async def main():
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_TOKEN)
+        .post_init(update_bot_description)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -212,12 +217,9 @@ def main():
     app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf))
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
-    async def on_startup():
-        await update_bot_description(app)
-        print("Bot ishga tushdi...")
-
-    app.post_init(on_startup)
-    app.run_polling()
+    print("Bot ishga tushdi...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
