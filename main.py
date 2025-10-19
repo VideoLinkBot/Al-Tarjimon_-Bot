@@ -201,8 +201,6 @@ async def update_bot_description(app):
         print(f"Bot tavsifi yangilandi: {desc}")
     except Exception as e:
         print(f"Tavsif yangilanishida xatolik: {e}")
-
-# ✅ To‘g‘rilangan asosiy qism
 async def main():
     app = (
         ApplicationBuilder()
