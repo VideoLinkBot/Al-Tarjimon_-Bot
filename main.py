@@ -194,11 +194,12 @@ async def update_bot_description(app):
     except Exception as e:
         print(f"Tavsiya yangilanishida xatolik: {e}")
 
+# ✅ To‘g‘rilangan qism
 def main():
     async def on_startup(app):
         await update_bot_description(app)
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(on_startup).build()
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -207,7 +208,13 @@ def main():
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
     print("Bot ishga tushdi...")
-    app.run_polling()
+
+    async def run():
+        await on_startup(app)
+        await app.run_polling()
+
+    import asyncio
+    asyncio.run(run())
 
 if __name__ == "__main__":
     main()
