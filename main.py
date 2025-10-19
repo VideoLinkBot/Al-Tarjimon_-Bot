@@ -12,8 +12,8 @@ from deep_translator import GoogleTranslator
 
 # .env fayldan tokenni yuklash
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ADMIN_ID = 6905227976
+TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")  # ✅ Railway variable nomiga moslashtirildi
+ADMIN_ID = int(os.getenv("ADMIN_ID", "6905227976"))
 
 # Qo‘llab-quvvatlanadigan tillar
 LANGUAGES = {
@@ -204,9 +204,6 @@ async def update_bot_description(app):
 
 # ✅ To‘g‘rilangan asosiy qism
 def main():
-    async def on_startup(app):
-        await update_bot_description(app)
-
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -215,14 +212,12 @@ def main():
     app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf))
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
-    print("Bot ishga tushdi...")
+    async def on_startup():
+        await update_bot_description(app)
+        print("Bot ishga tushdi...")
 
-    async def run():
-        await on_startup(app)
-        await app.run_polling()
-
-    import asyncio
-    asyncio.run(run())
+    app.post_init(on_startup)
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
